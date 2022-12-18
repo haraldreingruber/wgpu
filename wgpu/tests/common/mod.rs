@@ -178,7 +178,7 @@ pub fn initialize_test(parameters: TestParameters, test_function: impl FnOnce(Te
 
     let _test_guard = isolation::OneTestPerProcessGuard::new();
 
-    let (adapter, _) = initialize_adapter();
+    let (adapter, surface_guard) = initialize_adapter();
 
     let adapter_info = adapter.get_info();
     let adapter_lowercase_name = adapter_info.name.to_lowercase();
@@ -287,7 +287,9 @@ pub fn initialize_test(parameters: TestParameters, test_function: impl FnOnce(Te
         }
     );
 
-    let failed = panicked || canary_set;
+    let webgl_error = check_gl_error_for_wasm(surface_guard);
+
+    let failed = panicked || canary_set || webgl_error;
 
     let failure_cause = match (panicked, canary_set) {
         (true, true) => "PANIC AND VALIDATION ERROR",
@@ -346,6 +348,43 @@ fn initialize_adapter() -> (Adapter, SurfaceGuard) {
     .expect("could not find suitable adapter on the system");
 
     (adapter, SurfaceGuard)
+}
+
+#[cfg(not(all(target_arch = "wasm32", feature = "webgl")))]
+fn check_gl_error_for_wasm(_: SurfaceGuard) -> bool {
+    false
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "webgl"))]
+fn check_gl_error_for_wasm(_: SurfaceGuard) -> bool {
+    use wasm_bindgen::JsCast;
+
+    if let Some(document) = web_sys::window().and_then(|win| win.document()) {
+        if let Some(element) = document.get_element_by_id(CANVAS_ID) {
+            let canvas: web_sys::HtmlCanvasElement = element.dyn_into().unwrap();
+            let gl_context: web_sys::WebGl2RenderingContext = canvas
+                .get_context("webgl2")
+                .unwrap()
+                .unwrap()
+                .dyn_into()
+                .unwrap();
+
+            let error = gl_context.get_error();
+            match error {
+                // messages copied from https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/getError
+                web_sys::WebGl2RenderingContext::INVALID_ENUM => log::warn!("Test Fail Reason: INVALID_ENUM \n An unacceptable value has been specified for an enumerated argument. The command is ignored and the error flag is set."),
+                web_sys::WebGl2RenderingContext::INVALID_VALUE => log::warn!("Test Fail Reason: INVALID_VALUE \n A numeric argument is out of range. The command is ignored and the error flag is set."),
+                web_sys::WebGl2RenderingContext::INVALID_OPERATION => log::warn!("Test Fail Reason: INVALID_OPERATION \n The specified command is not allowed for the current state. The command is ignored and the error flag is set."),
+                web_sys::WebGl2RenderingContext::INVALID_FRAMEBUFFER_OPERATION => log::warn!("Test Fail Reason: INVALID_FRAMEBUFFER_OPERATION \n The currently bound framebuffer is not framebuffer complete when trying to render to or to read from it. "),
+                web_sys::WebGl2RenderingContext::OUT_OF_MEMORY => log::warn!("Test Fail Reason: OUT_OF_MEMORY \n Not enough memory is left to execute the command."),
+                web_sys::WebGl2RenderingContext::CONTEXT_LOST_WEBGL => log::warn!("Test Fail Reason: CONTEXT_LOST_WEBGL \n If the WebGL context is lost, this error is returned on the first call to getError. Afterwards and until the context has been restored, it returns gl.NO_ERROR."),
+                _ => (),
+            }
+            return error != web_sys::WebGl2RenderingContext::NO_ERROR;
+        }
+    };
+
+    false
 }
 
 struct SurfaceGuard;

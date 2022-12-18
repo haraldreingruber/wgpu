@@ -25,8 +25,6 @@ static TEXTURE_FORMATS_UNCOMPRESSED: &[wgpu::TextureFormat] = &[
     wgpu::TextureFormat::Rgba8Snorm,
     wgpu::TextureFormat::Rgba8Uint,
     wgpu::TextureFormat::Rgba8Sint,
-    wgpu::TextureFormat::Bgra8Unorm,
-    wgpu::TextureFormat::Bgra8UnormSrgb,
     wgpu::TextureFormat::Rgb10a2Unorm,
     wgpu::TextureFormat::Rg11b10Float,
     wgpu::TextureFormat::Rg32Uint,
@@ -39,6 +37,10 @@ static TEXTURE_FORMATS_UNCOMPRESSED: &[wgpu::TextureFormat] = &[
     wgpu::TextureFormat::Rgba32Sint,
     wgpu::TextureFormat::Rgba32Float,
     wgpu::TextureFormat::Rgb9e5Ufloat,
+    #[cfg(not(all(target_arch = "wasm32", feature = "webgl")))] // not supported by WebGL
+    wgpu::TextureFormat::Bgra8Unorm,
+    #[cfg(not(all(target_arch = "wasm32", feature = "webgl")))] // not supported by WebGL
+    wgpu::TextureFormat::Bgra8UnormSrgb,
 ];
 
 static TEXTURE_FORMATS_DEPTH: &[wgpu::TextureFormat] = &[
@@ -307,6 +309,7 @@ fn clear_texture_tests(
 }
 
 #[test]
+#[wasm_bindgen_test]
 fn clear_texture_2d_uncompressed() {
     initialize_test(
         TestParameters::default().features(wgpu::Features::CLEAR_TEXTURE),
